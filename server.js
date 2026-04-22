@@ -20,36 +20,44 @@ const pool = new Pool({
 
 // ==================== СОЗДАНИЕ ТАБЛИЦ ====================
 async function initDB() {
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-            login TEXT PRIMARY KEY,
-            password_hash TEXT NOT NULL
-        );
-        
-        CREATE TABLE IF NOT EXISTS profiles (
-            login TEXT PRIMARY KEY REFERENCES users(login) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            friends TEXT[] DEFAULT '{}'
-        );
-        
-        CREATE TABLE IF NOT EXISTS messages (
-            id SERIAL PRIMARY KEY,
-            dialog_id TEXT NOT NULL,
-            from_login TEXT NOT NULL,
-            text TEXT NOT NULL,
-            time TEXT NOT NULL
-        );
-        
-        CREATE TABLE IF NOT EXISTS friend_requests (
-            id SERIAL PRIMARY KEY,
-            from_login TEXT NOT NULL,
-            to_login TEXT NOT NULL,
-            status TEXT DEFAULT 'pending'
-        );
-    `);
-    console.log('✅ Таблицы созданы');
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                login TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL
+            );
+            
+            CREATE TABLE IF NOT EXISTS profiles (
+                login TEXT PRIMARY KEY REFERENCES users(login) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                friends TEXT[] DEFAULT '{}'
+            );
+            
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                dialog_id TEXT NOT NULL,
+                from_login TEXT NOT NULL,
+                text TEXT NOT NULL,
+                time TEXT NOT NULL
+            );
+            
+            CREATE TABLE IF NOT EXISTS friend_requests (
+                id SERIAL PRIMARY KEY,
+                from_login TEXT NOT NULL,
+                to_login TEXT NOT NULL,
+                status TEXT DEFAULT 'pending'
+            );
+        `);
+        console.log('✅ Таблицы созданы');
+    } catch (err) {
+        console.error('❌ Ошибка создания таблиц:', err.message);
+    }
 }
 initDB();
+
+// ==================== АДМИН-ПАНЕЛЬ ====================
+const ADMIN_PASSWORD = 'dartik24891074';
+const ADMIN_PATH = '/admin-panel-2024';
 
 // ==================== API РЕГИСТРАЦИИ ====================
 app.post('/api/register', async (req, res) => {
@@ -101,7 +109,7 @@ app.post('/api/search-user', async (req, res) => {
     }
     
     const me = await pool.query('SELECT friends FROM profiles WHERE login = $1', [currentUser]);
-    const friends = me.rows[0].friends || [];
+    const friends = me.rows[0]?.friends || [];
     if (friends.includes(login)) {
         return res.json({ success: false, error: 'Уже в друзьях' });
     }
@@ -185,10 +193,7 @@ app.post('/api/get-messages', async (req, res) => {
     res.json({ success: true, messages });
 });
 
-// ==================== АДМИН-ПАНЕЛЬ ====================
-const ADMIN_PASSWORD = 'dartik24891074';
-const ADMIN_PATH = '/admin-panel-2024';
-
+// ==================== АДМИН-ПАНЕЛЬ (HTML) ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -198,42 +203,16 @@ app.get(ADMIN_PATH, (req, res) => {
             <title>Админ-панель</title>
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                body {
-                    font-family: 'Segoe UI', sans-serif;
-                    background: #0a0a0a;
-                    color: white;
-                    padding: 30px;
-                }
+                body { font-family: 'Segoe UI', sans-serif; background: #0a0a0a; color: white; padding: 30px; }
                 .container { max-width: 1200px; margin: 0 auto; }
-                .card {
-                    background: #1a1a1a;
-                    border-radius: 20px;
-                    padding: 30px;
-                    margin-bottom: 20px;
-                }
+                .card { background: #1a1a1a; border-radius: 20px; padding: 30px; margin-bottom: 20px; }
                 h1 { color: #a855f7; margin-bottom: 20px; }
                 table { width: 100%; border-collapse: collapse; }
                 th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
-                button {
-                    background: #e53e3e;
-                    color: white;
-                    border: none;
-                    padding: 6px 12px;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    margin-right: 8px;
-                }
+                button { background: #e53e3e; color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; margin-right: 8px; }
                 .clear-btn { background: #f59e0b; }
-                .back-btn {
-                    background: #a855f7;
-                    text-decoration: none;
-                    padding: 8px 16px;
-                    border-radius: 8px;
-                    color: white;
-                    display: inline-block;
-                    margin-bottom: 20px;
-                }
-                input, button { padding: 8px; margin: 5px; }
+                .back-btn { background: #a855f7; text-decoration: none; padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin-bottom: 20px; }
+                input { padding: 8px; margin-right: 10px; }
             </style>
         </head>
         <body>
@@ -249,16 +228,12 @@ app.get(ADMIN_PATH, (req, res) => {
                 async function login() {
                     const pwd = document.getElementById('pwd').value;
                     const res = await fetch('/admin-panel-2024/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ password: pwd })
                     });
                     const data = await res.json();
-                    if (data.success) {
-                        loadPanel();
-                    } else {
-                        document.getElementById('error').innerText = 'Неверный пароль';
-                    }
+                    if (data.success) { loadPanel(); }
+                    else { document.getElementById('error').innerText = 'Неверный пароль'; }
                 }
                 async function loadPanel() {
                     const res = await fetch('/admin-panel-2024/users');
@@ -272,19 +247,13 @@ app.get(ADMIN_PATH, (req, res) => {
                 }
                 async function deleteUser(login) {
                     if(confirm('Удалить пользователя ' + login + '?')) {
-                        await fetch('/admin-panel-2024/delete-user', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ login })
-                        });
+                        await fetch('/admin-panel-2024/delete-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login }) });
                         loadPanel();
                     }
                 }
                 async function deleteMessages(login) {
                     if(confirm('Удалить сообщения ' + login + '?')) {
-                        await fetch('/admin-panel-2024/delete-user-messages', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ login })
-                        });
+                        await fetch('/admin-panel-2024/delete-user-messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login }) });
                         alert('Сообщения удалены');
                     }
                 }
