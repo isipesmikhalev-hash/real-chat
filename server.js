@@ -36,7 +36,7 @@ function dialogId(a, b) {
     return [a, b].sort().join('_');
 }
 
-// API регистрации и логина
+// API регистрации
 app.post('/api/register', async (req, res) => {
     const { login, password, name } = req.body;
     if (!login || !password || !name) {
@@ -57,6 +57,7 @@ app.post('/api/register', async (req, res) => {
     res.json({ success: true });
 });
 
+// API логина
 app.post('/api/login', async (req, res) => {
     const { login, password } = req.body;
     const users = read(USERS_FILE);
@@ -139,11 +140,11 @@ app.post('/api/get-messages', (req, res) => {
 global.userSockets = {};
 
 io.on('connection', (socket) => {
-    console.log('✅ Клиент подключился');
+    console.log('Client connected');
     socket.on('user online', (login) => {
         global.userSockets[login] = socket.id;
         socket.login = login;
-        console.log(`📡 ${login} онлайн`);
+        console.log(login + ' online');
     });
     socket.on('private message', (data) => {
         const { from, to, text, time } = data;
@@ -164,97 +165,69 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         if (socket.login) {
             delete global.userSockets[socket.login];
-            console.log(`📴 ${socket.login} отключился`);
+            console.log(socket.login + ' disconnected');
         }
     });
 });
 
-// ==================== АДМИН-ПАНЕЛЬ (ИСПРАВЛЕННАЯ) ====================
+// ==================== АДМИН-ПАНЕЛЬ (ОЧЕНЬ ПРОСТАЯ) ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Админ-панель</title>
-            <style>
-                body { background: #0a0a0a; color: white; font-family: Arial; padding: 20px; }
-                .card { background: #1a1a1a; border-radius: 20px; padding: 20px; max-width: 800px; margin: 0 auto; }
-                button { background: #a855f7; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; margin-top: 10px; }
-                .delete-btn { background: #e53e3e; margin-left: 10px; }
-                .back-btn { background: #555; text-decoration: none; padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin-bottom: 20px; }
-                input { padding: 8px; margin-right: 10px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
-            </style>
-        </head>
-        <body>
-        <div class="card">
-            <a href="/" class="back-btn">← Вернуться в чат</a>
-            <h1>🔐 Админ-панель</h1>
-            <div>
-                <input type="password" id="pwd" placeholder="Пароль">
-                <button id="loginButton">Войти</button>
-                <p id="errorMsg" style="color:red"></p>
-            </div>
-            <div id="panelDiv" style="display:none; margin-top:20px"></div>
-        </div>
-        <script>
-            document.getElementById('loginButton').addEventListener('click', async function() {
-                const pwd = document.getElementById('pwd').value;
-                try {
-                    const res = await fetch('/admin-panel-2024/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password: pwd })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        document.getElementById('panelDiv').style.display = 'block';
-                        document.getElementById('loginButton').style.display = 'none';
-                        loadUsers();
-                    } else {
-                        document.getElementById('errorMsg').innerText = 'Неверный пароль';
-                    }
-                } catch(err) {
-                    document.getElementById('errorMsg').innerText = 'Ошибка соединения';
-                }
-            });
-
-            async function loadUsers() {
-                const res = await fetch('/admin-panel-2024/users');
-                const data = await res.json();
-                if (!data.success) {
-                    document.getElementById('panelDiv').innerHTML = '<p style="color:red">Ошибка загрузки</p>';
-                    return;
-                }
-                let html = '<h2>📋 Список пользователей</h2>';
-                html += '<table><thead><tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></thead><tbody>';
-                for (const user of data.users) {
-                    html += '<tr>';
-                    html += '<td>' + user.login + '</td>';
-                    html += '<td>' + user.name + '</td>';
-                    html += '<td>' + (user.friendsCount || 0) + '</td>';
-                    html += '<td><button class="delete-btn" onclick="deleteUser(\'' + user.login + '\')">🗑️ Удалить</button></td>';
-                    html += '</tr>';
-                }
-                html += '</tbody></table>';
-                document.getElementById('panelDiv').innerHTML = html;
-            }
-
-            async function deleteUser(login) {
-                if (confirm('Удалить пользователя ' + login + '? Все его сообщения и друзья будут удалены.')) {
-                    await fetch('/admin-panel-2024/delete-user', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ login })
-                    });
-                    loadUsers();
-                }
-            }
-        </script>
-        </body>
-        </html>
+<!DOCTYPE html>
+<html>
+<head><title>Admin</title><meta charset="UTF-8"></head>
+<body style="background:#0a0a0a;color:white;font-family:Arial;padding:20px">
+<div style="max-width:800px;margin:0 auto;background:#1a1a1a;border-radius:20px;padding:20px">
+<a href="/" style="background:#555;color:white;padding:8px 16px;border-radius:8px;text-decoration:none">← Back</a>
+<h1>Admin Panel</h1>
+<input type="password" id="pwd" placeholder="Password">
+<button onclick="login()">Login</button>
+<div id="result"></div>
+</div>
+<script>
+function login() {
+    const pwd = document.getElementById('pwd').value;
+    fetch('/admin-panel-2024/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if(data.success) loadUsers();
+        else alert('Wrong password');
+    });
+}
+function loadUsers() {
+    fetch('/admin-panel-2024/users')
+    .then(r => r.json())
+    .then(data => {
+        let html = '<h2>Users</h2><table border="1" cellpadding="8" style="width:100%;border-collapse:collapse">';
+        html += '<tr><th>Login</th><th>Name</th><th>Friends</th><th>Action</th></tr>';
+        data.users.forEach(u => {
+            html += '<tr>';
+            html += '<td>' + u.login + '</td>';
+            html += '<td>' + u.name + '</td>';
+            html += '<td>' + (u.friendsCount || 0) + '</td>';
+            html += '<td><button onclick="deleteUser(\\'' + u.login + '\\')">Delete</button></td>';
+            html += '</tr>';
+        });
+        html += '</table>';
+        document.getElementById('result').innerHTML = html;
+    });
+}
+function deleteUser(login) {
+    if(confirm('Delete ' + login + '?')) {
+        fetch('/admin-panel-2024/delete-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ login: login })
+        }).then(() => loadUsers());
+    }
+}
+</script>
+</body>
+</html>
     `);
 });
 
@@ -298,6 +271,6 @@ app.post(ADMIN_PATH + '/delete-user', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен на порту ${PORT}`);
-    console.log(`🔐 Админ-панель: http://localhost:${PORT}${ADMIN_PATH}`);
+    console.log('Server running on port ' + PORT);
+    console.log('Admin: http://localhost:' + PORT + ADMIN_PATH);
 });
