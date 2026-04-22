@@ -1,3 +1,9 @@
+// Регистрация PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(() => console.log('Service Worker registered'))
+    .catch((err) => console.log('SW error:', err));
+}
 const loginPanel = document.getElementById('loginPanel');
 const registerPanel = document.getElementById('registerPanel');
 const loginError = document.getElementById('loginError');

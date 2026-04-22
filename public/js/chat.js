@@ -1,3 +1,9 @@
+// Регистрация PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(() => console.log('Service Worker registered'))
+    .catch((err) => console.log('SW error:', err));
+}
 // ==================== ПЕРЕМЕННЫЕ ====================
 let currentUser = localStorage.getItem('currentUser');
 let socket = null;
