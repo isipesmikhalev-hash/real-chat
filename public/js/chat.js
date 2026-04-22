@@ -24,14 +24,12 @@ if (Notification.permission === 'default') {
     Notification.requestPermission();
 }
 
-// Функция показа уведомления
 function showNotification(title, body) {
     if (Notification.permission === 'granted' && document.hidden) {
         new Notification(title, { body: body, icon: '/icons/icon-512.png' });
     }
 }
 
-// Подключение сокета
 function connectSocket() {
     socket = io();
     
@@ -43,9 +41,7 @@ function connectSocket() {
         if (currentFriend === data.from) {
             addMessageToChat(data.from, data.text, data.time);
         } else {
-            // Показать уведомление
             showNotification(data.from, data.text);
-            // Обновить счётчик непрочитанных
             updateUnreadCount(data.from);
         }
         loadFriends();
@@ -53,7 +49,7 @@ function connectSocket() {
     
     socket.on('friend request', (data) => {
         loadRequests();
-        showNotification('Новая заявка', `${data.from} хочет добавить вас в друзья`);
+        showNotification('Новая заявка', data.from + ' хочет добавить вас в друзья');
     });
     
     socket.on('user status', (data) => {
@@ -61,9 +57,8 @@ function connectSocket() {
     });
 }
 
-// Обновление статуса друга в списке
 function updateFriendStatus(login, status) {
-    const friendDiv = document.querySelector(`.friend-item[data-login="${login}"]`);
+    const friendDiv = document.querySelector('.friend-item[data-login="' + login + '"]');
     if (friendDiv) {
         const statusDot = friendDiv.querySelector('.status-dot');
         if (statusDot) {
@@ -72,7 +67,6 @@ function updateFriendStatus(login, status) {
     }
 }
 
-// Обновление счётчика непрочитанных
 function updateUnreadCount(from) {
     let unread = JSON.parse(localStorage.getItem('unread_' + currentUser) || '{}');
     unread[from] = (unread[from] || 0) + 1;
@@ -88,7 +82,7 @@ function clearUnreadCount(friendLogin) {
 }
 
 async function loadUserInfo() {
-    userInfoDiv.innerHTML = `<span>👤 ${currentUser}</span>`;
+    userInfoDiv.innerHTML = '<span>👤 ' + currentUser + '</span>';
 }
 
 async function loadFriends() {
@@ -109,16 +103,17 @@ function updateFriendsListUI() {
     }
     
     const unread = JSON.parse(localStorage.getItem('unread_' + currentUser) || '{}');
-    
     friendsListDiv.innerHTML = '';
-    allFriends.forEach(friend => {
+    
+    for (let i = 0; i < allFriends.length; i++) {
+        const friend = allFriends[i];
         const friendDiv = document.createElement('div');
         friendDiv.className = 'friend-item';
         friendDiv.setAttribute('data-login', friend.login);
         const unreadCount = unread[friend.login] || 0;
-        const unreadBadge = unreadCount > 0 ? `<span class="unread-badge">${unreadCount}</span>` : '';
+        const unreadBadge = unreadCount > 0 ? '<span class="unread-badge">' + unreadCount + '</span>' : '';
         friendDiv.innerHTML = `
-            <div class="friend-avatar">${friend.avatar || '👤'}</div>
+            <div class="friend-avatar">👤</div>
             <div class="friend-info">
                 <div class="friend-name">
                     ${escapeHtml(friend.name)}
@@ -129,18 +124,20 @@ function updateFriendsListUI() {
                 <div class="friend-last-seen" id="lastSeen_${friend.login}">—</div>
             </div>
         `;
-        friendDiv.addEventListener('click', () => {
-            clearUnreadCount(friend.login);
-            openChat(friend.login, friend.name);
-        });
+        friendDiv.addEventListener('click', (function(f) {
+            return function() {
+                clearUnreadCount(f.login);
+                openChat(f.login, f.name);
+            };
+        })(friend));
         friendsListDiv.appendChild(friendDiv);
-    });
+    }
 }
 
 async function loadRequests() {
     const res = await fetch('/api/get-requests', {
         method: 'POST',
-        headers: { 'Content-Type':application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ login: currentUser })
     });
     const data = await res.json();
@@ -151,7 +148,8 @@ async function loadRequests() {
     }
     
     requestsListDiv.innerHTML = '';
-    data.requests.forEach(req => {
+    for (let i = 0; i < data.requests.length; i++) {
+        const req = data.requests[i];
         const reqDiv = document.createElement('div');
         reqDiv.className = 'request-item';
         reqDiv.innerHTML = `
@@ -159,20 +157,21 @@ async function loadRequests() {
             <button class="accept-btn" data-login="${req.from}">✅ Принять</button>
         `;
         requestsListDiv.appendChild(reqDiv);
-    });
+    }
     
-    document.querySelectorAll('.accept-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const friendLogin = btn.dataset.login;
+    const acceptBtns = document.querySelectorAll('.accept-btn');
+    for (let i = 0; i < acceptBtns.length; i++) {
+        acceptBtns[i].addEventListener('click', async (e) => {
+            const friendLogin = e.target.getAttribute('data-login');
             await fetch('/api/accept-request', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ login: currentUser, friendLogin })
+                body: JSON.stringify({ login: currentUser, friendLogin: friendLogin })
             });
             loadRequests();
             loadFriends();
         });
-    });
+    }
 }
 
 searchBtn.addEventListener('click', async () => {
@@ -182,12 +181,12 @@ searchBtn.addEventListener('click', async () => {
     const res = await fetch('/api/search-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ login: searchLogin, currentUser })
+        body: JSON.stringify({ login: searchLogin, currentUser: currentUser })
     });
     const data = await res.json();
     
     if (!data.success) {
-        searchResult.innerHTML = `<div class="error-message">${data.error}</div>`;
+        searchResult.innerHTML = '<div class="error-message">' + data.error + '</div>';
         return;
     }
     
@@ -211,7 +210,7 @@ searchBtn.addEventListener('click', async () => {
 
 async function openChat(friendLogin, friendName) {
     currentFriend = friendLogin;
-    chatHeader.innerHTML = `<h3>💬 Чат с ${escapeHtml(friendName)}</h3>`;
+    chatHeader.innerHTML = '<h3>💬 Чат с ' + escapeHtml(friendName) + '</h3>';
     messageInput.disabled = false;
     sendBtn.disabled = false;
     
@@ -226,9 +225,10 @@ async function openChat(friendLogin, friendName) {
     if (data.messages.length === 0) {
         messagesArea.innerHTML = '<div class="welcome-message">✨ Напишите первое сообщение ✨</div>';
     } else {
-        data.messages.forEach(msg => {
+        for (let i = 0; i < data.messages.length; i++) {
+            const msg = data.messages[i];
             addMessageToChat(msg.from, msg.text, msg.time);
-        });
+        }
     }
     messagesArea.scrollTop = messagesArea.scrollHeight;
 }
@@ -236,7 +236,7 @@ async function openChat(friendLogin, friendName) {
 function addMessageToChat(from, text, time) {
     const isOwn = from === currentUser;
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${isOwn ? 'own' : 'other'}`;
+    messageDiv.className = 'message ' + (isOwn ? 'own' : 'other');
     messageDiv.innerHTML = `
         <div class="message-header">${escapeHtml(from)}</div>
         <div class="message-text">${escapeHtml(text)}</div>
@@ -272,7 +272,6 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Загрузка данных и подключение
 loadUserInfo();
 loadFriends();
 loadRequests();
