@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // ==================== КОНФИГУРАЦИЯ АДМИНА ====================
-const ADMIN_PASSWORD = 'dartik24891074*';  // Смени на свой пароль!
+const ADMIN_PASSWORD = 'dartik24891074*';
 const ADMIN_SECRET_PATH = '/admin-panel-2024';
 
 // ==================== РАБОТА С ФАЙЛАМИ ====================
@@ -57,41 +57,34 @@ app.post(ADMIN_SECRET_PATH + '/login', (req, res) => {
 });
 
 app.get(ADMIN_SECRET_PATH + '/users', (req, res) => {
-    const profiles = readJSON(PROFILES_FILE);
-    const users = readJSON(USERS_FILE);
-    
-    const result = profiles.map(profile => {
-        const user = users.find(u => u.login === profile.login);
-        return {
+    try {
+        const profiles = readJSON(PROFILES_FILE);
+        const result = profiles.map(profile => ({
             login: profile.login,
             name: profile.name,
-            friendsCount: profile.friends.length,
-            hasPassword: !!user
-        };
-    });
-    
-    res.json({ success: true, users: result });
+            friendsCount: profile.friends.length
+        }));
+        res.json({ success: true, users: result });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
 });
 
 app.post(ADMIN_SECRET_PATH + '/delete-user', (req, res) => {
     const { login } = req.body;
     
-    // Удаляем из users.json
     let users = readJSON(USERS_FILE);
     users = users.filter(u => u.login !== login);
     writeJSON(USERS_FILE, users);
     
-    // Удаляем из profiles.json
     let profiles = readJSON(PROFILES_FILE);
     profiles = profiles.filter(p => p.login !== login);
     writeJSON(PROFILES_FILE, profiles);
     
-    // Удаляем заявки
     let requests = readJSON(REQUESTS_FILE);
     requests = requests.filter(r => r.from !== login && r.to !== login);
     writeJSON(REQUESTS_FILE, requests);
     
-    // Удаляем сообщения
     let messages = readJSON(MESSAGES_FILE);
     messages = messages.map(dialog => {
         dialog.messages = dialog.messages.filter(msg => msg.from !== login);
@@ -372,7 +365,7 @@ app.get(ADMIN_SECRET_PATH, (req, res) => {
                         <div class="panel-card">
                             <h1>👑 Админ-панель</h1>
                             <p>Всего пользователей: \${data.users.length}</p>
-                            <table>
+                             <table>
                                 <thead>
                                     <tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></tr>
                                 </thead>
@@ -432,7 +425,7 @@ app.get(ADMIN_SECRET_PATH, (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`✅ Мессенджер запущен на http://localhost:${PORT}`);
-    console.log(`🔐 Админ-панель: http://localhost:${PORT}${ADMIN_SECRET_PATH}`);
+    console.log(`✅ Мессенджер запущен на порту ${PORT}`);
+    console.log(`🔐 Админ-панель доступна по пути ${ADMIN_SECRET_PATH}`);
     console.log(`🔑 Мастер-пароль: ${ADMIN_PASSWORD}`);
 });
