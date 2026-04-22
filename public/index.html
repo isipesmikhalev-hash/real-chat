@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real Chat | Вход</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="auth-wrapper">
+            <!-- ВХОД -->
+            <div id="loginPanel" class="auth-card glass">
+                <h1>🔐 Real Chat</h1>
+                <p>Войдите в свой аккаунт</p>
+                <input type="text" id="loginLogin" placeholder="Логин">
+                <input type="password" id="loginPassword" placeholder="Пароль">
+                <button id="loginBtn">Войти</button>
+                <p class="auth-switch">Нет аккаунта? <a href="#" id="showRegister">Зарегистрироваться</a></p>
+                <div id="loginError" class="error-message"></div>
+            </div>
+
+            <!-- РЕГИСТРАЦИЯ -->
+            <div id="registerPanel" class="auth-card glass" style="display: none;">
+                <h1>📝 Регистрация</h1>
+                <p>Создайте новый аккаунт</p>
+                <input type="text" id="regLogin" placeholder="Логин">
+                <input type="text" id="regName" placeholder="Ваше имя">
+                <input type="password" id="regPassword" placeholder="Пароль">
+                <button id="registerBtn">Зарегистрироваться</button>
+                <p class="auth-switch">Уже есть аккаунт? <a href="#" id="showLogin">Войти</a></p>
+                <div id="registerError" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+</body>
+</html>
