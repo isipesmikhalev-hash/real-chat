@@ -6,5 +6,9 @@
   {
     "login": "dany",
     "passwordHash": "$2a$10$sZ1uWJpMaMBZLUp2JbdJX.M.eY./e0u431de2JQLxE5O4oFMsRNlC"
+  },
+  {
+    "login": "gany",
+    "passwordHash": "$2a$10$xbNxpXURLf/2e2LlPnvWKeCntd8zC0OVNEkGqAcPnNLNJkgqdH2m2"
   }
 ]

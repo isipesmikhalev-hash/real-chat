@@ -6,49 +6,38 @@
     <title>Real Chat | Мессенджер</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#1a1a1a">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Real Chat">
-<link rel="apple-touch-icon" href="/icons/icon-152.png">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
     <div class="container">
         <div class="messenger">
-            <!-- Боковая панель -->
             <div class="sidebar glass">
                 <div class="sidebar-header">
                     <h2>💬 Real Chat</h2>
                     <div class="user-info" id="userInfo"></div>
                 </div>
-                
                 <div class="search-section">
                     <input type="text" id="searchUser" placeholder="🔍 Найти пользователя по логину">
                     <button id="searchBtn">Найти</button>
                     <div id="searchResult" class="search-result"></div>
                 </div>
-                
                 <div class="requests-section">
                     <h3>📨 Заявки в друзья</h3>
                     <div id="requestsList" class="requests-list"></div>
                 </div>
-                
                 <div class="friends-section">
                     <h3>👥 Друзья</h3>
                     <div id="friendsList" class="friends-list"></div>
                 </div>
             </div>
-            
-            <!-- Основная область чата -->
             <div class="chat-area glass">
                 <div class="chat-header" id="chatHeader">
                     <h3>Выберите друга для начала общения</h3>
                 </div>
-                
                 <div class="messages-area" id="messagesArea">
                     <div class="welcome-message">✨ Выберите друга из списка слева ✨</div>
                 </div>
-                
                 <div class="input-area">
                     <input type="text" id="messageInput" placeholder="Введите сообщение..." disabled>
                     <button id="sendBtn" disabled>📤 Отправить</button>
@@ -56,7 +45,6 @@
             </div>
         </div>
     </div>
-
     <script src="/socket.io/socket.io.js"></script>
     <script src="js/chat.js"></script>
 </body>

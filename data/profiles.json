@@ -9,5 +9,10 @@
     "login": "dany",
     "name": "Дмитрий",
     "friends": []
+  },
+  {
+    "login": "gany",
+    "name": "Евгений",
+    "friends": []
   }
 ]
