@@ -2,8 +2,8 @@ const express = require('express');
 const path = require('path');
 const http = require('http');
 const socketIO = require('socket.io');
-const fs = require('fs');
 const bcrypt = require('bcryptjs');
+const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,29 +12,44 @@ const io = socketIO(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-const ADMIN_PASSWORD = 'dartik24891074';
-const ADMIN_PATH = '/admin-panel-2024';
+// ==================== ПОДКЛЮЧЕНИЕ К БД ====================
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
-const REQUESTS_FILE = path.join(DATA_DIR, 'requests.json');
-
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-
-function read(file) {
-    if (!fs.existsSync(file)) return [];
-    return JSON.parse(fs.readFileSync(file));
+// ==================== СОЗДАНИЕ ТАБЛИЦ ====================
+async function initDB() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+            login TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL
+        );
+        
+        CREATE TABLE IF NOT EXISTS profiles (
+            login TEXT PRIMARY KEY REFERENCES users(login) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            friends TEXT[] DEFAULT '{}'
+        );
+        
+        CREATE TABLE IF NOT EXISTS messages (
+            id SERIAL PRIMARY KEY,
+            dialog_id TEXT NOT NULL,
+            from_login TEXT NOT NULL,
+            text TEXT NOT NULL,
+            time TEXT NOT NULL
+        );
+        
+        CREATE TABLE IF NOT EXISTS friend_requests (
+            id SERIAL PRIMARY KEY,
+            from_login TEXT NOT NULL,
+            to_login TEXT NOT NULL,
+            status TEXT DEFAULT 'pending'
+        );
+    `);
+    console.log('✅ Таблицы созданы');
 }
-
-function write(file, data) {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-function dialogId(a, b) {
-    return [a, b].sort().join('_');
-}
+initDB();
 
 // ==================== API РЕГИСТРАЦИИ ====================
 app.post('/api/register', async (req, res) => {
@@ -42,135 +57,138 @@ app.post('/api/register', async (req, res) => {
     if (!login || !password || !name) {
         return res.json({ success: false, error: 'Заполните все поля' });
     }
-    const users = read(USERS_FILE);
-    if (users.find(u => u.login === login)) {
+    
+    const existing = await pool.query('SELECT * FROM users WHERE login = $1', [login]);
+    if (existing.rows.length > 0) {
         return res.json({ success: false, error: 'Пользователь уже существует' });
     }
-    const hash = await bcrypt.hash(password, 10);
-    users.push({ login, passwordHash: hash });
-    write(USERS_FILE, users);
     
-    const profiles = read(PROFILES_FILE);
-    profiles.push({ login, name, friends: [] });
-    write(PROFILES_FILE, profiles);
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query('INSERT INTO users (login, password_hash) VALUES ($1, $2)', [login, hash]);
+    await pool.query('INSERT INTO profiles (login, name) VALUES ($1, $2)', [login, name]);
     
     res.json({ success: true });
 });
 
+// ==================== API ЛОГИНА ====================
 app.post('/api/login', async (req, res) => {
     const { login, password } = req.body;
-    const users = read(USERS_FILE);
-    const user = users.find(u => u.login === login);
-    if (!user) return res.json({ success: false, error: 'Неверный логин' });
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.json({ success: false, error: 'Неверный пароль' });
+    const result = await pool.query('SELECT * FROM users WHERE login = $1', [login]);
+    
+    if (result.rows.length === 0) {
+        return res.json({ success: false, error: 'Неверный логин' });
+    }
+    
+    const valid = await bcrypt.compare(password, result.rows[0].password_hash);
+    if (!valid) {
+        return res.json({ success: false, error: 'Неверный пароль' });
+    }
+    
     res.json({ success: true, login });
 });
 
 // ==================== API ДРУЗЕЙ ====================
-app.post('/api/search-user', (req, res) => {
+app.post('/api/search-user', async (req, res) => {
     const { login, currentUser } = req.body;
-    const profiles = read(PROFILES_FILE);
-    const user = profiles.find(p => p.login === login);
-    if (!user) return res.json({ success: false, error: 'Пользователь не найден' });
-    if (user.login === currentUser) return res.json({ success: false, error: 'Это вы' });
-    const me = profiles.find(p => p.login === currentUser);
-    if (me.friends.includes(login)) return res.json({ success: false, error: 'Уже в друзьях' });
-    res.json({ success: true, name: user.name, login: user.login });
+    const result = await pool.query('SELECT * FROM profiles WHERE login = $1', [login]);
+    
+    if (result.rows.length === 0) {
+        return res.json({ success: false, error: 'Пользователь не найден' });
+    }
+    
+    if (login === currentUser) {
+        return res.json({ success: false, error: 'Это вы' });
+    }
+    
+    const me = await pool.query('SELECT friends FROM profiles WHERE login = $1', [currentUser]);
+    const friends = me.rows[0].friends || [];
+    if (friends.includes(login)) {
+        return res.json({ success: false, error: 'Уже в друзьях' });
+    }
+    
+    res.json({ success: true, name: result.rows[0].name, login });
 });
 
-app.post('/api/send-request', (req, res) => {
+app.post('/api/send-request', async (req, res) => {
     const { from, to } = req.body;
-    const requests = read(REQUESTS_FILE);
-    if (requests.find(r => r.from === from && r.to === to)) {
+    const existing = await pool.query(
+        'SELECT * FROM friend_requests WHERE from_login = $1 AND to_login = $2',
+        [from, to]
+    );
+    if (existing.rows.length > 0) {
         return res.json({ success: false, error: 'Заявка уже отправлена' });
     }
-    requests.push({ from, to, status: 'pending' });
-    write(REQUESTS_FILE, requests);
+    
+    await pool.query(
+        'INSERT INTO friend_requests (from_login, to_login) VALUES ($1, $2)',
+        [from, to]
+    );
     res.json({ success: true });
 });
 
-app.post('/api/get-requests', (req, res) => {
+app.post('/api/get-requests', async (req, res) => {
     const { login } = req.body;
-    const requests = read(REQUESTS_FILE);
-    const profiles = read(PROFILES_FILE);
-    const incoming = requests.filter(r => r.to === login && r.status === 'pending');
-    const result = incoming.map(r => {
-        const p = profiles.find(pr => pr.login === r.from);
-        return { from: r.from, name: p ? p.name : r.from };
-    });
-    res.json({ success: true, requests: result });
+    const result = await pool.query(
+        'SELECT from_login FROM friend_requests WHERE to_login = $1 AND status = $2',
+        [login, 'pending']
+    );
+    
+    const requests = [];
+    for (const row of result.rows) {
+        const profile = await pool.query('SELECT name FROM profiles WHERE login = $1', [row.from_login]);
+        requests.push({ from: row.from_login, name: profile.rows[0]?.name || row.from_login });
+    }
+    
+    res.json({ success: true, requests });
 });
 
-app.post('/api/accept-request', (req, res) => {
+app.post('/api/accept-request', async (req, res) => {
     const { login, friendLogin } = req.body;
-    let requests = read(REQUESTS_FILE);
-    requests = requests.filter(r => !(r.from === friendLogin && r.to === login));
-    write(REQUESTS_FILE, requests);
-    const profiles = read(PROFILES_FILE);
-    const me = profiles.find(p => p.login === login);
-    const friend = profiles.find(p => p.login === friendLogin);
-    if (!me.friends.includes(friendLogin)) me.friends.push(friendLogin);
-    if (!friend.friends.includes(login)) friend.friends.push(login);
-    write(PROFILES_FILE, profiles);
+    
+    await pool.query('DELETE FROM friend_requests WHERE from_login = $1 AND to_login = $2', [friendLogin, login]);
+    
+    await pool.query('UPDATE profiles SET friends = array_append(friends, $1) WHERE login = $2', [friendLogin, login]);
+    await pool.query('UPDATE profiles SET friends = array_append(friends, $1) WHERE login = $2', [login, friendLogin]);
+    
     res.json({ success: true });
 });
 
-app.post('/api/get-friends', (req, res) => {
+app.post('/api/get-friends', async (req, res) => {
     const { login } = req.body;
-    const profiles = read(PROFILES_FILE);
-    const me = profiles.find(p => p.login === login);
-    const friends = me.friends.map(f => {
-        const fr = profiles.find(p => p.login === f);
-        return { login: f, name: fr ? fr.name : f };
-    });
+    const result = await pool.query('SELECT friends FROM profiles WHERE login = $1', [login]);
+    const friendsList = result.rows[0]?.friends || [];
+    
+    const friends = [];
+    for (const f of friendsList) {
+        const profile = await pool.query('SELECT name FROM profiles WHERE login = $1', [f]);
+        friends.push({ login: f, name: profile.rows[0]?.name || f });
+    }
+    
     res.json({ success: true, friends });
 });
 
-// ==================== СООБЩЕНИЯ ====================
-app.post('/api/get-messages', (req, res) => {
+// ==================== API СООБЩЕНИЙ ====================
+app.post('/api/get-messages', async (req, res) => {
     const { user1, user2 } = req.body;
-    const id = dialogId(user1, user2);
-    const messages = read(MESSAGES_FILE);
-    const dialog = messages.find(m => m.id === id);
-    res.json({ success: true, messages: dialog ? dialog.messages : [] });
+    const dialogId = [user1, user2].sort().join('_');
+    const result = await pool.query(
+        'SELECT from_login, text, time FROM messages WHERE dialog_id = $1 ORDER BY id',
+        [dialogId]
+    );
+    
+    const messages = result.rows.map(row => ({
+        from: row.from_login,
+        text: row.text,
+        time: row.time
+    }));
+    
+    res.json({ success: true, messages });
 });
 
-// ==================== SOCKET ====================
-global.userSockets = {};
+// ==================== АДМИН-ПАНЕЛЬ ====================
+const ADMIN_PASSWORD = 'dartik24891074';
+const ADMIN_PATH = '/admin-panel-2024';
 
-io.on('connection', (socket) => {
-    console.log('✅ Клиент подключился');
-    socket.on('user online', (login) => {
-        global.userSockets[login] = socket.id;
-        socket.login = login;
-        console.log(`📡 ${login} онлайн`);
-    });
-    socket.on('private message', (data) => {
-        const { from, to, text, time } = data;
-        const id = dialogId(from, to);
-        const messages = read(MESSAGES_FILE);
-        let dialog = messages.find(m => m.id === id);
-        if (!dialog) {
-            dialog = { id, messages: [] };
-            messages.push(dialog);
-        }
-        dialog.messages.push({ from, text, time });
-        write(MESSAGES_FILE, messages);
-        const toId = global.userSockets[to];
-        if (toId) {
-            io.to(toId).emit('private message', { from, text, time });
-        }
-    });
-    socket.on('disconnect', () => {
-        if (socket.login) {
-            delete global.userSockets[socket.login];
-            console.log(`📴 ${socket.login} отключился`);
-        }
-    });
-});
-
-// ==================== АДМИН-ПАНЕЛЬ (ПОЛНАЯ) ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -194,15 +212,8 @@ app.get(ADMIN_PATH, (req, res) => {
                     margin-bottom: 20px;
                 }
                 h1 { color: #a855f7; margin-bottom: 20px; }
-                table {
-                    width: 100%;
-                    border-collapse: collapse;
-                }
-                th, td {
-                    padding: 12px;
-                    text-align: left;
-                    border-bottom: 1px solid #333;
-                }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
                 button {
                     background: #e53e3e;
                     color: white;
@@ -222,88 +233,59 @@ app.get(ADMIN_PATH, (req, res) => {
                     display: inline-block;
                     margin-bottom: 20px;
                 }
-                .error { color: #e53e3e; margin-top: 10px; }
-                .success { color: #4ade80; }
+                input, button { padding: 8px; margin: 5px; }
             </style>
         </head>
         <body>
             <div class="container" id="app">
                 <div id="loginPanel" class="card">
                     <h1>🔐 Админ-панель</h1>
-                    <p>Введите мастер-пароль</p>
-                    <input type="password" id="pwd" placeholder="Пароль" style="padding:8px; width:200px; margin-right:10px;">
+                    <input type="password" id="pwd" placeholder="Пароль">
                     <button onclick="login()">Войти</button>
-                    <div id="error" class="error"></div>
+                    <div id="error" style="color:red"></div>
                 </div>
             </div>
             <script>
                 async function login() {
-                    const password = document.getElementById('pwd').value;
-                    const res = await fetch('${ADMIN_PATH}/login', {
+                    const pwd = document.getElementById('pwd').value;
+                    const res = await fetch('/admin-panel-2024/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password })
+                        body: JSON.stringify({ password: pwd })
                     });
                     const data = await res.json();
                     if (data.success) {
-                        loadAdminPanel();
+                        loadPanel();
                     } else {
                         document.getElementById('error').innerText = 'Неверный пароль';
                     }
                 }
-
-                async function loadAdminPanel() {
-                    const res = await fetch('${ADMIN_PATH}/users');
+                async function loadPanel() {
+                    const res = await fetch('/admin-panel-2024/users');
                     const data = await res.json();
-                    let html = \`
-                        <div class="card">
-                            <a href="/" class="back-btn">← Вернуться в чат</a>
-                            <h1>👑 Админ-панель</h1>
-                            <p>Всего пользователей: \${data.users.length}</p>
-                            <table>
-                                <thead>
-                                    <tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></tr>
-                                </thead>
-                                <tbody>
-                    \`;
+                    let html = '<div class="card"><a href="/" class="back-btn">← Вернуться в чат</a><h1>👑 Админ-панель</h1><p>Всего пользователей: ' + data.users.length + '</p><table><thead><tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></tr></thead><tbody>';
                     data.users.forEach(user => {
-                        html += \`
-                            <tr>
-                                <td>\${user.login}</td>
-                                <td>\${user.name}</td>
-                                <td>\${user.friendsCount}</td>
-                                <td>
-                                    <button onclick="deleteUser('\${user.login}')">🗑️ Удалить пользователя</button>
-                                    <button class="clear-btn" onclick="deleteUserMessages('\${user.login}')">📝 Удалить сообщения</button>
-                                </td>
-                            </tr>
-                        \`;
+                        html += '<tr><td>' + user.login + '</td><td>' + user.name + '</td><td>' + user.friendsCount + '</td><td><button onclick="deleteUser(\'' + user.login + '\')">🗑️ Удалить</button><button class="clear-btn" onclick="deleteMessages(\'' + user.login + '\')">📝 Удалить сообщения</button></td></tr>';
                     });
-                    html += \`</tbody></table></div>\`;
+                    html += '</tbody></table></div>';
                     document.getElementById('app').innerHTML = html;
                 }
-
                 async function deleteUser(login) {
-                    if(confirm(\`Удалить пользователя "\${login}"? ВСЕ данные будут удалены.\`)) {
-                        const res = await fetch('${ADMIN_PATH}/delete-user', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                    if(confirm('Удалить пользователя ' + login + '?')) {
+                        await fetch('/admin-panel-2024/delete-user', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ login })
                         });
-                        const data = await res.json();
-                        if(data.success) loadAdminPanel();
+                        loadPanel();
                     }
                 }
-
-                async function deleteUserMessages(login) {
-                    if(confirm(\`Удалить ВСЕ сообщения пользователя "\${login}"?\`)) {
-                        const res = await fetch('${ADMIN_PATH}/delete-user-messages', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                async function deleteMessages(login) {
+                    if(confirm('Удалить сообщения ' + login + '?')) {
+                        await fetch('/admin-panel-2024/delete-user-messages', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ login })
                         });
-                        const data = await res.json();
-                        if(data.success) alert('Сообщения удалены');
+                        alert('Сообщения удалены');
                     }
                 }
             </script>
@@ -312,59 +294,65 @@ app.get(ADMIN_PATH, (req, res) => {
     `);
 });
 
-// ==================== API АДМИНА ====================
 app.post(ADMIN_PATH + '/login', (req, res) => {
     res.json({ success: req.body.password === ADMIN_PASSWORD });
 });
 
-app.get(ADMIN_PATH + '/users', (req, res) => {
-    const profiles = read(PROFILES_FILE);
-    const users = profiles.map(p => ({
-        login: p.login,
-        name: p.name,
-        friendsCount: p.friends.length
-    }));
-    res.json({ success: true, users });
+app.get(ADMIN_PATH + '/users', async (req, res) => {
+    const result = await pool.query('SELECT login, name, array_length(friends, 1) as friendsCount FROM profiles');
+    res.json({ success: true, users: result.rows });
 });
 
-app.post(ADMIN_PATH + '/delete-user', (req, res) => {
+app.post(ADMIN_PATH + '/delete-user', async (req, res) => {
     const { login } = req.body;
-    let users = read(USERS_FILE);
-    users = users.filter(u => u.login !== login);
-    write(USERS_FILE, users);
-    
-    let profiles = read(PROFILES_FILE);
-    profiles = profiles.filter(p => p.login !== login);
-    write(PROFILES_FILE, profiles);
-    
-    let requests = read(REQUESTS_FILE);
-    requests = requests.filter(r => r.from !== login && r.to !== login);
-    write(REQUESTS_FILE, requests);
-    
-    let messages = read(MESSAGES_FILE);
-    messages = messages.map(d => {
-        d.messages = d.messages.filter(m => m.from !== login);
-        return d;
-    }).filter(d => d.messages.length > 0);
-    write(MESSAGES_FILE, messages);
-    
+    await pool.query('DELETE FROM users WHERE login = $1', [login]);
     res.json({ success: true });
 });
 
-app.post(ADMIN_PATH + '/delete-user-messages', (req, res) => {
+app.post(ADMIN_PATH + '/delete-user-messages', async (req, res) => {
     const { login } = req.body;
-    let messages = read(MESSAGES_FILE);
-    messages = messages.map(d => {
-        d.messages = d.messages.filter(m => m.from !== login);
-        return d;
-    }).filter(d => d.messages.length > 0);
-    write(MESSAGES_FILE, messages);
+    await pool.query('DELETE FROM messages WHERE from_login = $1', [login]);
     res.json({ success: true });
+});
+
+// ==================== SOCKET.IO ====================
+global.userSockets = {};
+
+io.on('connection', (socket) => {
+    console.log('✅ Клиент подключился');
+    
+    socket.on('user online', (login) => {
+        global.userSockets[login] = socket.id;
+        socket.login = login;
+        console.log(`📡 ${login} онлайн`);
+    });
+    
+    socket.on('private message', async (data) => {
+        const { from, to, text, time } = data;
+        const dialogId = [from, to].sort().join('_');
+        
+        await pool.query(
+            'INSERT INTO messages (dialog_id, from_login, text, time) VALUES ($1, $2, $3, $4)',
+            [dialogId, from, text, time]
+        );
+        
+        const toId = global.userSockets[to];
+        if (toId) {
+            io.to(toId).emit('private message', { from, text, time });
+        }
+    });
+    
+    socket.on('disconnect', () => {
+        if (socket.login) {
+            delete global.userSockets[socket.login];
+            console.log(`📴 ${socket.login} отключился`);
+        }
+    });
 });
 
 // ==================== ЗАПУСК ====================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Сервер запущен на порту ${PORT}`);
-    console.log(`🔐 Админ-панель: http://localhost:${PORT}${ADMIN_PATH}`);
+    console.log(`🔐 Админ-панель: /${ADMIN_PATH}`);
 });
