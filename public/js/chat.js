@@ -1,10 +1,3 @@
-// Регистрация PWA
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
-    .then(() => console.log('Service Worker registered'))
-    .catch((err) => console.log('SW error:', err));
-}
-// ==================== ПЕРЕМЕННЫЕ ====================
 let currentUser = localStorage.getItem('currentUser');
 let socket = null;
 let currentFriend = null;
@@ -22,12 +15,23 @@ const searchUserInput = document.getElementById('searchUser');
 const searchBtn = document.getElementById('searchBtn');
 const searchResult = document.getElementById('searchResult');
 
-// Проверка авторизации
 if (!currentUser) {
     window.location.href = '/';
 }
 
-// ==================== ПОДКЛЮЧЕНИЕ SOCKET ====================
+// Запрос разрешения на уведомления
+if (Notification.permission === 'default') {
+    Notification.requestPermission();
+}
+
+// Функция показа уведомления
+function showNotification(title, body) {
+    if (Notification.permission === 'granted' && document.hidden) {
+        new Notification(title, { body: body, icon: '/icons/icon-512.png' });
+    }
+}
+
+// Подключение сокета
 function connectSocket() {
     socket = io();
     
@@ -39,31 +43,51 @@ function connectSocket() {
         if (currentFriend === data.from) {
             addMessageToChat(data.from, data.text, data.time);
         } else {
-            // Показать уведомление о новом сообщении
-            showNotification(data.from);
+            // Показать уведомление
+            showNotification(data.from, data.text);
+            // Обновить счётчик непрочитанных
+            updateUnreadCount(data.from);
         }
-        loadFriends(); // Обновляем список друзей (для уведомлений)
+        loadFriends();
     });
     
     socket.on('friend request', (data) => {
         loadRequests();
-        showNotification(`${data.from} отправил заявку в друзья`);
+        showNotification('Новая заявка', `${data.from} хочет добавить вас в друзья`);
     });
     
-    socket.on('message sent', (data) => {
-        // Сообщение отправлено
+    socket.on('user status', (data) => {
+        updateFriendStatus(data.login, data.status);
     });
 }
 
-// ==================== ЗАГРУЗКА ДАННЫХ ====================
+// Обновление статуса друга в списке
+function updateFriendStatus(login, status) {
+    const friendDiv = document.querySelector(`.friend-item[data-login="${login}"]`);
+    if (friendDiv) {
+        const statusDot = friendDiv.querySelector('.status-dot');
+        if (statusDot) {
+            statusDot.className = 'status-dot ' + (status === 'online' ? 'online' : 'offline');
+        }
+    }
+}
+
+// Обновление счётчика непрочитанных
+function updateUnreadCount(from) {
+    let unread = JSON.parse(localStorage.getItem('unread_' + currentUser) || '{}');
+    unread[from] = (unread[from] || 0) + 1;
+    localStorage.setItem('unread_' + currentUser, JSON.stringify(unread));
+    updateFriendsListUI();
+}
+
+function clearUnreadCount(friendLogin) {
+    let unread = JSON.parse(localStorage.getItem('unread_' + currentUser) || '{}');
+    delete unread[friendLogin];
+    localStorage.setItem('unread_' + currentUser, JSON.stringify(unread));
+    updateFriendsListUI();
+}
+
 async function loadUserInfo() {
-    const res = await fetch('/api/get-friends', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ login: currentUser })
-    });
-    const data = await res.json();
-    allFriends = data.friends;
     userInfoDiv.innerHTML = `<span>👤 ${currentUser}</span>`;
 }
 
@@ -75,24 +99,40 @@ async function loadFriends() {
     });
     const data = await res.json();
     allFriends = data.friends;
-    
+    updateFriendsListUI();
+}
+
+function updateFriendsListUI() {
     if (allFriends.length === 0) {
         friendsListDiv.innerHTML = '<div class="empty-message">Нет друзей. Добавьте кого-нибудь!</div>';
         return;
     }
     
+    const unread = JSON.parse(localStorage.getItem('unread_' + currentUser) || '{}');
+    
     friendsListDiv.innerHTML = '';
     allFriends.forEach(friend => {
         const friendDiv = document.createElement('div');
         friendDiv.className = 'friend-item';
+        friendDiv.setAttribute('data-login', friend.login);
+        const unreadCount = unread[friend.login] || 0;
+        const unreadBadge = unreadCount > 0 ? `<span class="unread-badge">${unreadCount}</span>` : '';
         friendDiv.innerHTML = `
             <div class="friend-avatar">${friend.avatar || '👤'}</div>
             <div class="friend-info">
-                <div class="friend-name">${escapeHtml(friend.name)}</div>
+                <div class="friend-name">
+                    ${escapeHtml(friend.name)}
+                    <span class="status-dot offline"></span>
+                    ${unreadBadge}
+                </div>
                 <div class="friend-login">@${escapeHtml(friend.login)}</div>
+                <div class="friend-last-seen" id="lastSeen_${friend.login}">—</div>
             </div>
         `;
-        friendDiv.addEventListener('click', () => openChat(friend.login, friend.name));
+        friendDiv.addEventListener('click', () => {
+            clearUnreadCount(friend.login);
+            openChat(friend.login, friend.name);
+        });
         friendsListDiv.appendChild(friendDiv);
     });
 }
@@ -100,7 +140,7 @@ async function loadFriends() {
 async function loadRequests() {
     const res = await fetch('/api/get-requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type':application/json' },
         body: JSON.stringify({ login: currentUser })
     });
     const data = await res.json();
@@ -135,7 +175,6 @@ async function loadRequests() {
     });
 }
 
-// ==================== ПОИСК ПОЛЬЗОВАТЕЛЕЙ ====================
 searchBtn.addEventListener('click', async () => {
     const searchLogin = searchUserInput.value.trim();
     if (!searchLogin) return;
@@ -170,14 +209,12 @@ searchBtn.addEventListener('click', async () => {
     });
 });
 
-// ==================== ЧАТ ====================
 async function openChat(friendLogin, friendName) {
     currentFriend = friendLogin;
     chatHeader.innerHTML = `<h3>💬 Чат с ${escapeHtml(friendName)}</h3>`;
     messageInput.disabled = false;
     sendBtn.disabled = false;
     
-    // Загружаем историю сообщений
     const res = await fetch('/api/get-messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -193,6 +230,7 @@ async function openChat(friendLogin, friendName) {
             addMessageToChat(msg.from, msg.text, msg.time);
         });
     }
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }
 
 function addMessageToChat(from, text, time) {
@@ -219,40 +257,22 @@ function sendMessage() {
         text: text,
         time: time
     });
-    
     addMessageToChat(currentUser, text, time);
     messageInput.value = '';
 }
 
-// ==================== УВЕДОМЛЕНИЯ ====================
-function showNotification(message) {
-    if (Notification.permission === 'granted') {
-        new Notification('Real Chat', { body: message });
-    } else if (Notification.permission !== 'denied') {
-        Notification.requestPermission();
-    }
-    // Также показываем в интерфейсе
-    const notificationDiv = document.createElement('div');
-    notificationDiv.className = 'notification-toast';
-    notificationDiv.textContent = message;
-    document.body.appendChild(notificationDiv);
-    setTimeout(() => notificationDiv.remove(), 3000);
-}
+sendBtn.addEventListener('click', sendMessage);
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMessage();
+});
 
-// ==================== ЗАЩИТА ОТ XSS ====================
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// ==================== ОБРАБОТЧИКИ ====================
-sendBtn.addEventListener('click', sendMessage);
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
-});
-
-// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+// Загрузка данных и подключение
 loadUserInfo();
 loadFriends();
 loadRequests();

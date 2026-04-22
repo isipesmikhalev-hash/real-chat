@@ -169,7 +169,29 @@ io.on('connection', (socket) => {
         }
     });
 });
+// Время последней активности пользователей
+let lastSeen = {};
 
+// При подключении
+socket.on('user online', (login) => {
+    global.userSockets[login] = socket.id;
+    socket.login = login;
+    lastSeen[login] = new Date().toISOString();
+    console.log(`${login} онлайн`);
+    // Уведомляем всех друзей, что пользователь онлайн
+    io.emit('user status', { login: login, status: 'online' });
+});
+
+// При отключении
+socket.on('disconnect', () => {
+    if (socket.login) {
+        delete global.userSockets[socket.login];
+        lastSeen[socket.login] = new Date().toISOString();
+        console.log(`${socket.login} отключился`);
+        // Уведомляем всех друзей, что пользователь офлайн
+        io.emit('user status', { login: socket.login, status: 'offline' });
+    }
+});
 // ==================== АДМИН-ПАНЕЛЬ (ОЧЕНЬ ПРОСТАЯ) ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
