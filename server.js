@@ -138,14 +138,19 @@ app.post('/api/get-messages', (req, res) => {
 
 // Socket.IO
 global.userSockets = {};
+let lastSeen = {};
 
 io.on('connection', (socket) => {
     console.log('Client connected');
+    
     socket.on('user online', (login) => {
         global.userSockets[login] = socket.id;
         socket.login = login;
+        lastSeen[login] = new Date().toISOString();
         console.log(login + ' online');
+        io.emit('user status', { login: login, status: 'online' });
     });
+    
     socket.on('private message', (data) => {
         const { from, to, text, time } = data;
         const id = dialogId(from, to);
@@ -162,37 +167,18 @@ io.on('connection', (socket) => {
             io.to(toId).emit('private message', { from, text, time });
         }
     });
+    
     socket.on('disconnect', () => {
         if (socket.login) {
             delete global.userSockets[socket.login];
+            lastSeen[socket.login] = new Date().toISOString();
             console.log(socket.login + ' disconnected');
+            io.emit('user status', { login: socket.login, status: 'offline' });
         }
     });
 });
-// Время последней активности пользователей
-let lastSeen = {};
 
-// При подключении
-socket.on('user online', (login) => {
-    global.userSockets[login] = socket.id;
-    socket.login = login;
-    lastSeen[login] = new Date().toISOString();
-    console.log(`${login} онлайн`);
-    // Уведомляем всех друзей, что пользователь онлайн
-    io.emit('user status', { login: login, status: 'online' });
-});
-
-// При отключении
-socket.on('disconnect', () => {
-    if (socket.login) {
-        delete global.userSockets[socket.login];
-        lastSeen[socket.login] = new Date().toISOString();
-        console.log(`${socket.login} отключился`);
-        // Уведомляем всех друзей, что пользователь офлайн
-        io.emit('user status', { login: socket.login, status: 'offline' });
-    }
-});
-// ==================== АДМИН-ПАНЕЛЬ (ОЧЕНЬ ПРОСТАЯ) ====================
+// ==================== АДМИН-ПАНЕЛЬ ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
 <!DOCTYPE html>
