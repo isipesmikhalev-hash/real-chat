@@ -36,7 +36,7 @@ function dialogId(a, b) {
     return [a, b].sort().join('_');
 }
 
-// ==================== API РЕГИСТРАЦИИ ====================
+// API регистрации и логина
 app.post('/api/register', async (req, res) => {
     const { login, password, name } = req.body;
     if (!login || !password || !name) {
@@ -67,7 +67,7 @@ app.post('/api/login', async (req, res) => {
     res.json({ success: true, login });
 });
 
-// ==================== API ДРУЗЕЙ ====================
+// API друзей
 app.post('/api/search-user', (req, res) => {
     const { login, currentUser } = req.body;
     const profiles = read(PROFILES_FILE);
@@ -127,7 +127,6 @@ app.post('/api/get-friends', (req, res) => {
     res.json({ success: true, friends });
 });
 
-// ==================== СООБЩЕНИЯ ====================
 app.post('/api/get-messages', (req, res) => {
     const { user1, user2 } = req.body;
     const id = dialogId(user1, user2);
@@ -136,7 +135,7 @@ app.post('/api/get-messages', (req, res) => {
     res.json({ success: true, messages: dialog ? dialog.messages : [] });
 });
 
-// ==================== SOCKET ====================
+// Socket.IO
 global.userSockets = {};
 
 io.on('connection', (socket) => {
@@ -170,7 +169,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// ==================== АДМИН-ПАНЕЛЬ (ИСПРАВЛЕНА) ====================
+// ==================== АДМИН-ПАНЕЛЬ (УПРОЩЁННАЯ, НО РАБОЧАЯ) ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -180,13 +179,12 @@ app.get(ADMIN_PATH, (req, res) => {
             <title>Админ-панель</title>
             <style>
                 body { background: #0a0a0a; color: white; font-family: Arial; padding: 20px; }
-                .card { background: #1a1a1a; border-radius: 20px; padding: 20px; max-width: 1000px; margin: 0 auto; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
+                .card { background: #1a1a1a; border-radius: 20px; padding: 20px; max-width: 800px; margin: 0 auto; }
                 button { background: #e53e3e; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
                 .back-btn { background: #a855f7; text-decoration: none; padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin-bottom: 20px; }
                 input { padding: 8px; margin-right: 10px; }
-                h2 { margin-top: 20px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
             </style>
         </head>
         <body>
@@ -195,7 +193,7 @@ app.get(ADMIN_PATH, (req, res) => {
             <h1>🔐 Админ-панель</h1>
             <input type="password" id="pwd" placeholder="Пароль">
             <button onclick="login()">Войти</button>
-            <div id="panel" style="margin-top:20px"></div>
+            <div id="result"></div>
         </div>
         <script>
         async function login() {
@@ -207,20 +205,15 @@ app.get(ADMIN_PATH, (req, res) => {
             });
             const data = await res.json();
             if (data.success) {
-                loadPanel();
+                loadUsers();
             } else {
                 alert('Неверный пароль');
             }
         }
-        async function loadPanel() {
+        async function loadUsers() {
             const res = await fetch('/admin-panel-2024/users');
             const data = await res.json();
-            if (!data.success) {
-                document.getElementById('panel').innerHTML = '<p style="color:red">Ошибка загрузки пользователей</p>';
-                return;
-            }
-            let html = '<h2>📋 Список пользователей</h2>';
-            html += '<table><thead><tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></thead><tbody>';
+            let html = '<h2>Пользователи</h2><table><thead><tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></tr></thead><tbody>';
             data.users.forEach(user => {
                 html += '<tr>';
                 html += '<td>' + user.login + '</td>';
@@ -230,21 +223,16 @@ app.get(ADMIN_PATH, (req, res) => {
                 html += '</tr>';
             });
             html += '</tbody></table>';
-            document.getElementById('panel').innerHTML = html;
+            document.getElementById('result').innerHTML = html;
         }
         async function deleteUser(login) {
-            if(confirm('Удалить пользователя ' + login + '? Все его сообщения и друзья будут удалены.')) {
-                const res = await fetch('/admin-panel-2024/delete-user', {
+            if(confirm('Удалить пользователя ' + login + '?')) {
+                await fetch('/admin-panel-2024/delete-user', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ login })
                 });
-                const data = await res.json();
-                if(data.success) {
-                    loadPanel();
-                } else {
-                    alert('Ошибка удаления');
-                }
+                loadUsers();
             }
         }
         </script>
@@ -291,18 +279,6 @@ app.post(ADMIN_PATH + '/delete-user', (req, res) => {
     res.json({ success: true });
 });
 
-app.post(ADMIN_PATH + '/delete-user-messages', (req, res) => {
-    const { login } = req.body;
-    let messages = read(MESSAGES_FILE);
-    messages = messages.map(d => {
-        d.messages = d.messages.filter(m => m.from !== login);
-        return d;
-    }).filter(d => d.messages.length > 0);
-    write(MESSAGES_FILE, messages);
-    res.json({ success: true });
-});
-
-// ==================== ЗАПУСК ====================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Сервер запущен на порту ${PORT}`);
