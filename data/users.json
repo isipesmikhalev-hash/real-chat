@@ -2,5 +2,9 @@
   {
     "login": "evgensii",
     "passwordHash": "$2a$10$dqPTh7VQb3dGXNg0eyLwdOpgV7SbkLC6jyL5ZSWCR0.ApNpUHFYRy"
+  },
+  {
+    "login": "dany",
+    "passwordHash": "$2a$10$sZ1uWJpMaMBZLUp2JbdJX.M.eY./e0u431de2JQLxE5O4oFMsRNlC"
   }
 ]
