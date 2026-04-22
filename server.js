@@ -55,7 +55,7 @@ async function initDB() {
 }
 initDB();
 
-// ==================== АДМИН-ПАНЕЛЬ ====================
+// ==================== КОНФИГ ====================
 const ADMIN_PASSWORD = 'dartik24891074';
 const ADMIN_PATH = '/admin-panel-2024';
 
@@ -193,7 +193,7 @@ app.post('/api/get-messages', async (req, res) => {
     res.json({ success: true, messages });
 });
 
-// ==================== АДМИН-ПАНЕЛЬ (HTML) ====================
+// ==================== АДМИН-ПАНЕЛЬ ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -212,7 +212,7 @@ app.get(ADMIN_PATH, (req, res) => {
                 button { background: #e53e3e; color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; margin-right: 8px; }
                 .clear-btn { background: #f59e0b; }
                 .back-btn { background: #a855f7; text-decoration: none; padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin-bottom: 20px; }
-                input { padding: 8px; margin-right: 10px; }
+                input, button { padding: 8px; margin: 5px; }
             </style>
         </head>
         <body>
