@@ -169,7 +169,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// ==================== АДМИН-ПАНЕЛЬ (ПРОСТАЯ РАБОЧАЯ) ====================
+// ==================== АДМИН-ПАНЕЛЬ (ИСПРАВЛЕННАЯ) ====================
 app.get(ADMIN_PATH, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -180,7 +180,7 @@ app.get(ADMIN_PATH, (req, res) => {
             <style>
                 body { background: #0a0a0a; color: white; font-family: Arial; padding: 20px; }
                 .card { background: #1a1a1a; border-radius: 20px; padding: 20px; max-width: 800px; margin: 0 auto; }
-                button { background: #a855f7; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+                button { background: #a855f7; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; margin-top: 10px; }
                 .delete-btn { background: #e53e3e; margin-left: 10px; }
                 .back-btn { background: #555; text-decoration: none; padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin-bottom: 20px; }
                 input { padding: 8px; margin-right: 10px; }
@@ -192,60 +192,66 @@ app.get(ADMIN_PATH, (req, res) => {
         <div class="card">
             <a href="/" class="back-btn">← Вернуться в чат</a>
             <h1>🔐 Админ-панель</h1>
-            <div id="loginDiv">
+            <div>
                 <input type="password" id="pwd" placeholder="Пароль">
-                <button onclick="checkPassword()">Войти</button>
+                <button id="loginButton">Войти</button>
                 <p id="errorMsg" style="color:red"></p>
             </div>
-            <div id="panelDiv" style="display:none"></div>
+            <div id="panelDiv" style="display:none; margin-top:20px"></div>
         </div>
         <script>
-        async function checkPassword() {
-            const pwd = document.getElementById('pwd').value;
-            const res = await fetch('/admin-panel-2024/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: pwd })
+            document.getElementById('loginButton').addEventListener('click', async function() {
+                const pwd = document.getElementById('pwd').value;
+                try {
+                    const res = await fetch('/admin-panel-2024/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: pwd })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        document.getElementById('panelDiv').style.display = 'block';
+                        document.getElementById('loginButton').style.display = 'none';
+                        loadUsers();
+                    } else {
+                        document.getElementById('errorMsg').innerText = 'Неверный пароль';
+                    }
+                } catch(err) {
+                    document.getElementById('errorMsg').innerText = 'Ошибка соединения';
+                }
             });
-            const data = await res.json();
-            if (data.success) {
-                document.getElementById('loginDiv').style.display = 'none';
-                document.getElementById('panelDiv').style.display = 'block';
-                loadUsers();
-            } else {
-                document.getElementById('errorMsg').innerText = 'Неверный пароль';
+
+            async function loadUsers() {
+                const res = await fetch('/admin-panel-2024/users');
+                const data = await res.json();
+                if (!data.success) {
+                    document.getElementById('panelDiv').innerHTML = '<p style="color:red">Ошибка загрузки</p>';
+                    return;
+                }
+                let html = '<h2>📋 Список пользователей</h2>';
+                html += '<table><thead><tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></thead><tbody>';
+                for (const user of data.users) {
+                    html += '<tr>';
+                    html += '<td>' + user.login + '</td>';
+                    html += '<td>' + user.name + '</td>';
+                    html += '<td>' + (user.friendsCount || 0) + '</td>';
+                    html += '<td><button class="delete-btn" onclick="deleteUser(\'' + user.login + '\')">🗑️ Удалить</button></td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table>';
+                document.getElementById('panelDiv').innerHTML = html;
             }
-        }
-        async function loadUsers() {
-            const res = await fetch('/admin-panel-2024/users');
-            const data = await res.json();
-            if (!data.success) {
-                document.getElementById('panelDiv').innerHTML = '<p style="color:red">Ошибка загрузки</p>';
-                return;
+
+            async function deleteUser(login) {
+                if (confirm('Удалить пользователя ' + login + '? Все его сообщения и друзья будут удалены.')) {
+                    await fetch('/admin-panel-2024/delete-user', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ login })
+                    });
+                    loadUsers();
+                }
             }
-            let html = '<h2>📋 Список пользователей</h2>';
-            html += '<table><thead><tr><th>Логин</th><th>Имя</th><th>Друзей</th><th>Действия</th></thead><tbody>';
-            for (const user of data.users) {
-                html += '<tr>';
-                html += '<td>' + user.login + '</td>';
-                html += '<td>' + user.name + '</td>';
-                html += '<td>' + (user.friendsCount || 0) + '</td>';
-                html += '<td><button class="delete-btn" onclick="deleteUser(\'' + user.login + '\')">🗑️ Удалить</button></td>';
-                html += '</tr>';
-            }
-            html += '</tbody></table>';
-            document.getElementById('panelDiv').innerHTML = html;
-        }
-        async function deleteUser(login) {
-            if (confirm('Удалить пользователя ' + login + '?')) {
-                await fetch('/admin-panel-2024/delete-user', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ login })
-                });
-                loadUsers();
-            }
-        }
         </script>
         </body>
         </html>
